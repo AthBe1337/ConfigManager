@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <string>
+#include <sstream>  // 新增
 
 using namespace ftxui;
 using json = config::json;
@@ -15,123 +16,186 @@ namespace fs = std::filesystem;
 
 namespace ui {
 
+// 新增：分割 json_pointer 路径字符串的辅助函数
+static std::vector<std::string> split_path(const std::string& pointer) {
+  std::vector<std::string> result;
+  std::stringstream ss(pointer);
+  std::string segment;
+  while (std::getline(ss, segment, '/')) {
+    if (!segment.empty()) {
+      // JSON Pointer 解码： ~0 -> ~ , ~1 -> /
+      std::string unescaped;
+      for (size_t i = 0; i < segment.size(); ++i) {
+        if (segment[i] == '~' && i + 1 < segment.size()) {
+          if (segment[i + 1] == '0') unescaped += '~';
+          else if (segment[i + 1] == '1') unescaped += '/';
+          ++i;
+        } else {
+          unescaped += segment[i];
+        }
+      }
+      result.push_back(unescaped);
+    }
+  }
+  return result;
+}
+
+struct JsonPathEntry {
+  std::vector<json::json_pointer> paths;
+  std::vector<std::string> labels;
+};
+
+JsonPathEntry build_label_path_tree(const json& config, const json& schema, const std::string& base = "", json::json_pointer ptr = json::json_pointer("")) {
+  JsonPathEntry result;
+
+  if (!schema.contains("type")) return result;
+  std::string type = schema["type"];
+
+  if (type == "object" && schema.contains("properties")) {
+    for (auto& [key, prop_schema] : schema["properties"].items()) {
+      auto child_ptr = ptr / key;
+      std::string label = base + key;
+      result.labels.push_back(label);
+      result.paths.push_back(child_ptr);
+
+      auto child = build_label_path_tree(config, prop_schema, base + "  ", child_ptr);
+      result.labels.insert(result.labels.end(), child.labels.begin(), child.labels.end());
+      result.paths.insert(result.paths.end(), child.paths.begin(), child.paths.end());
+    }
+  } else if (type == "array" && schema.contains("items")) {
+    const json& arr = config.contains(ptr) ? config[ptr] : json::array();
+    for (int i = 0; i < arr.size(); ++i) {
+      auto item_ptr = ptr / std::to_string(i);
+      std::string label = base + "[" + std::to_string(i) + "]";
+      result.labels.push_back(label);
+      result.paths.push_back(item_ptr);
+
+      auto child = build_label_path_tree(config, schema["items"], base + "  ", item_ptr);
+      result.labels.insert(result.labels.end(), child.labels.begin(), child.labels.end());
+      result.paths.insert(result.paths.end(), child.paths.begin(), child.paths.end());
+    }
+  }
+
+  return result;
+}
+
 void edit_config(const std::string& path, const config::json& schema) {
   json config = config::load_config(path);
 
-  std::string current_key;
   std::string status_message;
   std::string description;
   std::string edit_buffer;
 
   auto screen = ScreenInteractive::Fullscreen();
 
-  std::vector<std::string> keys;
-  for (auto& [key, prop] : schema["properties"].items()) {
-    keys.push_back(key);
-  }
-
   std::vector<std::string> menu_labels;
+  std::vector<json::json_pointer> menu_paths;
   int selected = 0;
 
-  auto update_menu_labels = [&] {
-    menu_labels.clear();
-    for (const auto& key : keys) {
-      menu_labels.push_back(key + " : " + config[key].dump());
-    }
+  auto update_menu_tree = [&] {
+    auto entry = build_label_path_tree(config, schema);
+    menu_labels = std::move(entry.labels);
+    menu_paths = std::move(entry.paths);
   };
 
-  auto select_key_by_index = [&] {
-    if (selected >= 0 && selected < keys.size()) {
-      current_key = keys[selected];
-      const json& value = config[current_key];
-      const auto& prop_schema = schema["properties"][current_key];
+  auto select_path_by_index = [&] {
+    if (selected >= 0 && selected < menu_paths.size()) {
+      json::json_pointer ptr = menu_paths[selected];
+      const json& val = config[ptr];
 
-      if (value.is_string()) {
-        edit_buffer = value.get<std::string>();
-      } else {
-        edit_buffer = value.dump();
+      // 获取 schema 路径
+      const json* schema_ptr = &schema;
+      auto tokens = split_path(ptr.to_string());
+      for (const std::string& key : tokens) {
+        if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "array") {
+          if (schema_ptr->contains("items"))
+            schema_ptr = &(*schema_ptr)["items"];
+        } else if (schema_ptr->contains("properties") && (*schema_ptr)["properties"].contains(key)) {
+          schema_ptr = &(*schema_ptr)["properties"][key];
+        }
       }
 
-      if (prop_schema.contains("description"))
-        description = prop_schema["description"].get<std::string>();
+      if (schema_ptr->contains("description"))
+        description = (*schema_ptr)["description"].get<std::string>();
       else
         description = "无描述";
+
+      if (schema_ptr->contains("enum")) {
+        edit_buffer = val.get<std::string>();
+      } else if (schema_ptr->contains("type")) {
+        std::string type = (*schema_ptr)["type"];
+        if (type == "string") {
+          edit_buffer = val.get<std::string>();
+        } else {
+          edit_buffer = val.dump();
+        }
+      } else {
+        edit_buffer = val.dump();
+      }
     }
   };
 
-  update_menu_labels();
-  if (!keys.empty()) select_key_by_index();
+  update_menu_tree();
+  if (!menu_paths.empty()) select_path_by_index();
 
   auto edit_input = Input(&edit_buffer, "编辑值");
   auto update_button = Button("更新", [&] {
-    if (!current_key.empty()) {
+    if (selected >= 0 && selected < menu_paths.size()) {
       try {
-        const auto& type = schema["properties"][current_key]["type"];
-        json parsed;
-        if (type == "string") {
-          parsed = edit_buffer;
-        } else if (type == "number" || type == "integer" || type == "boolean" || type == "array" || type == "object") {
-          parsed = json::parse(edit_buffer);
-        } else {
-          throw std::runtime_error("不支持的数据类型");
+        json::json_pointer ptr = menu_paths[selected];
+        const json* schema_ptr = &schema;
+        auto tokens = split_path(ptr.to_string());
+        for (const std::string& key : tokens) {
+          if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "array") {
+            if (schema_ptr->contains("items"))
+              schema_ptr = &(*schema_ptr)["items"];
+          } else if (schema_ptr->contains("properties") && (*schema_ptr)["properties"].contains(key)) {
+            schema_ptr = &(*schema_ptr)["properties"][key];
+          }
         }
 
-        config[current_key] = parsed;
-        status_message = "更新成功";
+        json parsed;
+        if (schema_ptr->contains("enum")) {
+          parsed = edit_buffer;
+        } else if (schema_ptr->contains("type")) {
+          std::string type = (*schema_ptr)["type"];
+          if (type == "string") {
+            parsed = edit_buffer;
+          } else {
+            parsed = json::parse(edit_buffer);
+          }
+        } else {
+          parsed = json::parse(edit_buffer);
+        }
 
-        update_menu_labels();
-        menu_labels[selected] = current_key + " : " + config[current_key].dump();
+        config[ptr] = parsed;
+        status_message = "更新成功";
+        update_menu_tree();
       } catch (...) {
-        status_message = "解析失败，必须是合法 JSON 或合法字符串";
+        status_message = "更新失败：无效 JSON 或类型不匹配";
       }
     }
   });
 
   MenuOption option;
   option.on_change = [&] {
-    select_key_by_index();
+    select_path_by_index();
   };
 
   auto menu = Menu(&menu_labels, &selected, option);
-
-  // 数组编辑器支持：增加/减少项
-  Component array_tools = Renderer([] {
-    return vbox({});
-  });
-
   auto right_column = Container::Vertical({edit_input, update_button});
+
   auto right_panel = Container::Vertical({
     Renderer([&] {
-      Elements elems = {
+      return vbox({
         text("描述:") | bold,
         paragraph(description),
         separator(),
-        hbox({text("当前值: "), text(current_key.empty() ? "" : config[current_key].dump())}),
-        separator(),
-      };
-
-      const auto& val = config[current_key];
-      const auto& prop_schema = schema["properties"][current_key];
-
-      if (val.is_array()) {
-        // 显示数组子项
-        int index = 0;
-        for (const auto& item : val) {
-          std::string prefix = "  -> [" + std::to_string(index++) + "] ";
-          if (item.is_object()) {
-            for (auto& [k, v] : item.items()) {
-              elems.push_back(text(prefix + k + " : " + v.dump()));
-            }
-          } else {
-            elems.push_back(text(prefix + item.dump()));
-          }
-        }
-      }
-
-      return vbox(elems);
+        hbox({text("当前值: "), text(edit_buffer)}),
+        separator()
+      });
     }),
-    right_column,
-    array_tools
+    right_column
   });
 
   auto layout = Container::Horizontal({menu, right_panel});
