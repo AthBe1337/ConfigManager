@@ -1,0 +1,9 @@
+[submodule "external/FTXUI"]
+	path = external/FTXUI
+	url = https://github.com/ArthurSonzogni/FTXUI.git
+[submodule "external/json"]
+	path = external/json
+	url = https://github.com/nlohmann/json
+[submodule "external/json-schema-validator"]
+	path = external/json-schema-validator
+	url = https://github.com/pboettch/json-schema-validator
