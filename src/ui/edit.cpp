@@ -384,7 +384,7 @@ namespace ui {
       try {
         config::validate_config(config, schema);
         config::set_active_config(path);
-        status_message = "设为激活配置";
+        status_message = "已设为激活配置";
       } catch (const std::exception& e) {
         show_warning("校验失败", e.what());
       }
@@ -394,6 +394,7 @@ namespace ui {
       if (confirm_dialog("确认删除", "是否删除该配置文件？")) {
         fs::remove(path);
         screen.Exit();
+        run_main_ui(app_name, schema);
       }
     };
 
@@ -401,7 +402,7 @@ namespace ui {
       Button("保存配置", on_save),
       Button("激活配置", on_activate),
       Button("删除配置", on_delete),
-      Button("返回", [&] {
+      Button("返回主菜单", [&] {
         screen.Exit();
         run_main_ui(app_name, schema);
       })

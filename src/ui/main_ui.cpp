@@ -71,7 +71,7 @@ namespace ui {
         std::regex valid_name(R"(^[A-Za-z0-9_-]+$)");
 
         auto screen = ScreenInteractive::FitComponent();
-        auto input_box = Input(&input, "例如: config1");
+        auto input_box = Input(&input, "不需要扩展名");
         auto confirm = Button("确定", [&] {
             if (input.empty()) {
                 error_message = "文件名不能为空";
@@ -174,11 +174,11 @@ namespace ui {
 
             auto menu = Menu(&display_files, &selected);
             auto buttons = Container::Horizontal({
-                Button("编辑", on_edit),
-                Button("删除", on_delete),
-                Button("激活", on_activate),
-                Button("新建", on_create),
-                Button("退出", on_quit)
+                Button("编辑配置", on_edit),
+                Button("删除配置", on_delete),
+                Button("激活配置", on_activate),
+                Button("新建配置", on_create),
+                Button("退出应用", on_quit)
             });
 
             auto layout = Container::Vertical({ menu, buttons });
