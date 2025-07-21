@@ -121,8 +121,7 @@ namespace ui {
 
             auto on_edit = [&] {
                 screen.Exit();
-                // TODO: ui::edit_config(...)
-                ui::edit_config(config_dir + "/" + files[selected], schema);
+                ui::edit_config(config_dir + "/" + files[selected], app_name, schema);
             };
 
             auto on_delete = [&] {
@@ -177,7 +176,7 @@ namespace ui {
             auto buttons = Container::Horizontal({
                 Button("编辑", on_edit),
                 Button("删除", on_delete),
-                Button("设为激活", on_activate),
+                Button("激活", on_activate),
                 Button("新建", on_create),
                 Button("退出", on_quit)
             });
