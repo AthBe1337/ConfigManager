@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
         }
 
         // 4. 加载 schema
-        auto schema = config::load_schema(fs::path(config_path).parent_path() / "schema.json");
+        auto schema = config::load_schema(fs::path(config_path).parent_path().string() + "/schema.json");
 
         // 5. 校验当前激活配置（如果存在）
         if (fs::exists(config::get_active_config_path())) {

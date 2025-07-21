@@ -85,6 +85,11 @@ void edit_config(const std::string& path, const config::json& schema) {
   std::string status_message;
   std::string description;
   std::string edit_buffer;
+  int enum_selected = 0;
+  bool bool_value = false;
+
+  // 新增：持久的枚举选项向量
+  std::vector<std::string> enum_options;
 
   auto screen = ScreenInteractive::Fullscreen();
 
@@ -103,7 +108,6 @@ void edit_config(const std::string& path, const config::json& schema) {
       json::json_pointer ptr = menu_paths[selected];
       const json& val = config[ptr];
 
-      // 获取 schema 路径
       const json* schema_ptr = &schema;
       auto tokens = split_path(ptr.to_string());
       for (const std::string& key : tokens) {
@@ -120,9 +124,30 @@ void edit_config(const std::string& path, const config::json& schema) {
       else
         description = "无描述";
 
-      if (schema_ptr->contains("enum")) {
-        edit_buffer = val.get<std::string>();
-      } else if (schema_ptr->contains("type")) {
+      if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "boolean") {
+        bool_value = val.get<bool>();
+        edit_buffer = "";
+      }
+      else if (schema_ptr->contains("enum")) {
+        const auto& enum_vals = (*schema_ptr)["enum"];
+        std::string current_val = val.get<std::string>();
+
+        // 更新枚举选项
+        enum_options.clear();
+        for (const auto& option : enum_vals) {
+          enum_options.push_back(option.get<std::string>());
+        }
+
+        // 设置当前选中项
+        for (int i = 0; i < enum_options.size(); i++) {
+          if (enum_options[i] == current_val) {
+            enum_selected = i;
+            break;
+          }
+        }
+        edit_buffer = "";
+      }
+      else if (schema_ptr->contains("type")) {
         std::string type = (*schema_ptr)["type"];
         if (type == "string") {
           edit_buffer = val.get<std::string>();
@@ -138,7 +163,7 @@ void edit_config(const std::string& path, const config::json& schema) {
   update_menu_tree();
   if (!menu_paths.empty()) select_path_by_index();
 
-  auto edit_input = Input(&edit_buffer, "编辑值");
+  // 更新按钮
   auto update_button = Button("更新", [&] {
     if (selected >= 0 && selected < menu_paths.size()) {
       try {
@@ -155,9 +180,13 @@ void edit_config(const std::string& path, const config::json& schema) {
         }
 
         json parsed;
-        if (schema_ptr->contains("enum")) {
-          parsed = edit_buffer;
-        } else if (schema_ptr->contains("type")) {
+        if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "boolean") {
+          parsed = bool_value;
+        }
+        else if (schema_ptr->contains("enum")) {
+          parsed = enum_options[enum_selected];
+        }
+        else if (schema_ptr->contains("type")) {
           std::string type = (*schema_ptr)["type"];
           if (type == "string") {
             parsed = edit_buffer;
@@ -183,20 +212,97 @@ void edit_config(const std::string& path, const config::json& schema) {
   };
 
   auto menu = Menu(&menu_labels, &selected, option);
-  auto right_column = Container::Vertical({edit_input, update_button});
 
-  auto right_panel = Container::Vertical({
-    Renderer([&] {
-      return vbox({
-        text("描述:") | bold,
-        paragraph(description),
-        separator(),
-        hbox({text("当前值: "), text(edit_buffer)}),
-        separator()
-      });
-    }),
-    right_column
+  // 右侧面板组件
+  Component description_display = Renderer([&] {
+    return vbox({
+      text("描述:") | bold,
+      paragraph(description),
+      separator()
+    });
   });
+
+  Component current_value_display = Renderer([&] {
+    std::string current_value;
+    if (selected >= 0 && selected < menu_paths.size()) {
+      json::json_pointer ptr = menu_paths[selected];
+      const json* schema_ptr = &schema;
+      auto tokens = split_path(ptr.to_string());
+      for (const std::string& key : tokens) {
+        if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "array") {
+          if (schema_ptr->contains("items"))
+            schema_ptr = &(*schema_ptr)["items"];
+        } else if (schema_ptr->contains("properties") && (*schema_ptr)["properties"].contains(key)) {
+          schema_ptr = &(*schema_ptr)["properties"][key];
+        }
+      }
+
+      if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "boolean") {
+        current_value = bool_value ? "true" : "false";
+      } else if (schema_ptr->contains("enum")) {
+        current_value = enum_options.empty() ? "" : enum_options[enum_selected];
+      } else {
+        current_value = config[ptr].dump();
+      }
+    }
+    return hbox({text("当前值: "), text(current_value)});
+  });
+
+  Component separator_renderer = Renderer([] { return separator(); });
+
+  // 动态编辑器组件
+  Component editor_component = Input(&edit_buffer, "编辑值");
+
+  // 右侧面板容器
+  auto right_panel = Container::Vertical({});
+
+  // 更新右侧面板
+  auto update_right_panel = [&] {
+    right_panel->DetachAllChildren();
+
+    // 添加固定组件
+    right_panel->Add(description_display);
+    right_panel->Add(current_value_display);
+    right_panel->Add(separator_renderer);
+
+    // 添加动态编辑器
+    if (selected >= 0 && selected < menu_paths.size()) {
+      json::json_pointer ptr = menu_paths[selected];
+      const json* schema_ptr = &schema;
+      auto tokens = split_path(ptr.to_string());
+      for (const std::string& key : tokens) {
+        if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "array") {
+          if (schema_ptr->contains("items"))
+            schema_ptr = &(*schema_ptr)["items"];
+        } else if (schema_ptr->contains("properties") && (*schema_ptr)["properties"].contains(key)) {
+          schema_ptr = &(*schema_ptr)["properties"][key];
+        }
+      }
+
+      // 布尔类型 - 显示复选框
+      if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "boolean") {
+        editor_component = Checkbox("", &bool_value);
+      }
+      // 枚举类型 - 显示切换按钮
+      else if (schema_ptr->contains("enum")) {
+        // 使用持久的 enum_options 向量
+        editor_component = Radiobox(&enum_options, &enum_selected);
+      }
+      // 其他类型 - 显示文本输入框
+      else {
+        editor_component = Input(&edit_buffer, "编辑值");
+      }
+    } else {
+      editor_component = Input(&edit_buffer, "编辑值");
+    }
+
+    // 添加编辑器和更新按钮
+    right_panel->Add(editor_component);
+    right_panel->Add(update_button);
+  };
+
+  // 初始化右侧面板
+  update_right_panel();
 
   auto layout = Container::Horizontal({menu, right_panel});
 
@@ -234,6 +340,13 @@ void edit_config(const std::string& path, const config::json& schema) {
   });
 
   auto main_renderer = Renderer(Container::Vertical({layout, buttons}), [&] {
+    // 当选中项变化时更新右侧面板
+    static int last_selected = -1;
+    if (selected != last_selected) {
+      update_right_panel();
+      last_selected = selected;
+    }
+
     return vbox({
       text("配置编辑器") | bold | center,
       separator(),
