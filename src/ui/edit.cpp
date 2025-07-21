@@ -1,176 +1,198 @@
 #include "edit.hpp"
-#include "main_ui.hpp"
 #include "../utils/fs.hpp"
+#include "../config.h"
+#include "main_ui.hpp"
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/dom/elements.hpp>
+#include <nlohmann/json.hpp>
 #include <filesystem>
-#include <vector>
 #include <string>
-#include <algorithm>
-#include <regex>
-#include <ctime>
 
 using namespace ftxui;
+using json = config::json;
+namespace fs = std::filesystem;
 
 namespace ui {
 
-    void edit_config(const std::string& filepath, const config::json& schema) {
-        config::json config_data = config::load_config(filepath);
-        auto screen = ScreenInteractive::Fullscreen();
+void edit_config(const std::string& path, const config::json& schema) {
+  json config = config::load_config(path);
 
-        // 用于存储数值输入的临时字符串
-        std::unordered_map<std::string, std::shared_ptr<std::string>> number_inputs;
+  std::string current_key;
+  std::string status_message;
+  std::string description;
+  std::string edit_buffer;
 
-        std::function<Component(const std::string&, config::json&, const config::json&)> render_json_edit;
+  auto screen = ScreenInteractive::Fullscreen();
 
-        render_json_edit = [&](const std::string& key, config::json& value, const config::json& subschema) -> Component {
-            if (subschema["type"] == "string") {
-                return Input(&value.get_ref<std::string&>(), key);
-            }
-            else if (subschema["type"] == "integer") {
-                // 整数类型处理
-                if (!number_inputs.count(key)) {
-                    number_inputs[key] = std::make_shared<std::string>(std::to_string(value.get<int>()));
-                }
+  std::vector<std::string> keys;
+  for (auto& [key, prop] : schema["properties"].items()) {
+    keys.push_back(key);
+  }
 
-                auto input = Input(number_inputs[key].get(), key);
+  std::vector<std::string> menu_labels;
+  int selected = 0;
 
-                return Container::Vertical({
-                    input
-                }) | CatchEvent([str = number_inputs[key], &value](Event event) {
-                    try {
-                        value = std::stoi(*str);
-                    } catch (...) {
-                        // 转换失败时保持原值
-                    }
-                    return false;
-                });
-            }
-            else if (subschema["type"] == "number") {
-                // 浮点数类型处理
-                if (!number_inputs.count(key)) {
-                    number_inputs[key] = std::make_shared<std::string>(std::to_string(value.get<double>()));
-                }
-
-                auto input = Input(number_inputs[key].get(), key);
-
-                return Container::Vertical({
-                    input
-                }) | CatchEvent([str = number_inputs[key], &value](Event event) {
-                    try {
-                        value = std::stod(*str);
-                    } catch (...) {
-                        // 转换失败时保持原值
-                    }
-                    return false;
-                });
-            }
-            else if (subschema["type"] == "boolean") {
-                return Checkbox(key, &value.get_ref<bool&>());
-            }
-            else if (subschema["type"] == "array") {
-                int min_items = subschema.value("minItems", 0);
-                auto container = Container::Vertical({});
-
-                for (int i = 0; i < value.size(); ++i) {
-                    auto element_container = Container::Horizontal({});
-                    element_container->Add(
-                        render_json_edit(key + "[" + std::to_string(i) + "]", value[i], subschema["items"])
-                    );
-                    element_container->Add(
-                        Button("删除", [&, i] {
-                            if (value.size() > min_items) {
-                                value.erase(value.begin() + i);
-                            } else {
-                                show_warning("删除失败", "不能少于最小项数 " + std::to_string(min_items));
-                            }
-                        })
-                    );
-                    container->Add(element_container);
-                }
-
-                container->Add(
-                    Button("添加", [&] {
-                        value.push_back(config::generate_default_config(subschema["items"]));
-                    })
-                );
-
-                return container;
-            }
-            else if (subschema["type"] == "object") {
-                auto container = Container::Vertical({});
-                for (auto& [k, subs] : subschema["properties"].items()) {
-                    if (value.contains(k)) {
-                        container->Add(render_json_edit(k, value[k], subs));
-                    }
-                }
-                return container;
-            }
-            return Renderer([] { return text("未知类型"); });
-        };
-
-        auto root_component = render_json_edit("", config_data, schema);
-
-        bool exit_editor = false;
-
-        auto on_save = [&] {
-            try {
-                config::save_config(filepath, config_data);
-                show_warning("保存成功", "配置已保存");
-            } catch (const std::exception& e) {
-                show_warning("保存失败", e.what());
-            }
-        };
-
-        auto on_activate = [&] {
-            try {
-                config::validate_config(config_data, schema);
-                config::save_config(filepath, config_data);
-                config::set_active_config(filepath);
-                show_warning("激活成功", "配置已设为激活");
-            } catch (const std::exception& e) {
-                show_warning("校验失败", e.what());
-            }
-        };
-
-        auto on_delete = [&] {
-            if (confirm_dialog("确认删除", "确定删除配置？")) {
-                fs::remove(filepath);
-                exit_editor = true;
-                screen.Exit();
-            }
-        };
-
-        auto on_quit = [&] {
-            if (confirm_dialog("确认退出", "放弃修改并退出？")) {
-                exit_editor = true;
-                screen.Exit();
-            }
-        };
-
-        auto buttons = Container::Horizontal({
-            Button("保存", on_save),
-            Button("激活", on_activate),
-            Button("删除", on_delete),
-            Button("退出", on_quit)
-        });
-
-        auto layout = Container::Vertical({root_component, buttons});
-
-        auto renderer = Renderer(layout, [&] {
-            return vbox({
-                text("编辑配置文件 - " + filepath) | bold | center,
-                separator(),
-                layout->Render() | frame | size(HEIGHT, GREATER_THAN, 20),
-            }) | border;
-        });
-
-        screen.Loop(renderer);
-
-        if (exit_editor) {
-            return;
-        }
+  auto update_menu_labels = [&] {
+    menu_labels.clear();
+    for (const auto& key : keys) {
+      menu_labels.push_back(key + " : " + config[key].dump());
     }
+  };
 
+  auto select_key_by_index = [&] {
+    if (selected >= 0 && selected < keys.size()) {
+      current_key = keys[selected];
+      const json& value = config[current_key];
+      const auto& prop_schema = schema["properties"][current_key];
+
+      if (value.is_string()) {
+        edit_buffer = value.get<std::string>();
+      } else {
+        edit_buffer = value.dump();
+      }
+
+      if (prop_schema.contains("description"))
+        description = prop_schema["description"].get<std::string>();
+      else
+        description = "无描述";
+    }
+  };
+
+  update_menu_labels();
+  if (!keys.empty()) select_key_by_index();
+
+  auto edit_input = Input(&edit_buffer, "编辑值");
+  auto update_button = Button("更新", [&] {
+    if (!current_key.empty()) {
+      try {
+        const auto& type = schema["properties"][current_key]["type"];
+        json parsed;
+        if (type == "string") {
+          parsed = edit_buffer;
+        } else if (type == "number" || type == "integer" || type == "boolean" || type == "array" || type == "object") {
+          parsed = json::parse(edit_buffer);
+        } else {
+          throw std::runtime_error("不支持的数据类型");
+        }
+
+        config[current_key] = parsed;
+        status_message = "更新成功";
+
+        update_menu_labels();
+        menu_labels[selected] = current_key + " : " + config[current_key].dump();
+      } catch (...) {
+        status_message = "解析失败，必须是合法 JSON 或合法字符串";
+      }
+    }
+  });
+
+  MenuOption option;
+  option.on_change = [&] {
+    select_key_by_index();
+  };
+
+  auto menu = Menu(&menu_labels, &selected, option);
+
+  // 数组编辑器支持：增加/减少项
+  Component array_tools = Renderer([] {
+    return vbox({});
+  });
+
+  auto right_column = Container::Vertical({edit_input, update_button});
+  auto right_panel = Container::Vertical({
+    Renderer([&] {
+      Elements elems = {
+        text("描述:") | bold,
+        paragraph(description),
+        separator(),
+        hbox({text("当前值: "), text(current_key.empty() ? "" : config[current_key].dump())}),
+        separator(),
+      };
+
+      const auto& val = config[current_key];
+      const auto& prop_schema = schema["properties"][current_key];
+
+      if (val.is_array()) {
+        // 显示数组子项
+        int index = 0;
+        for (const auto& item : val) {
+          std::string prefix = "  -> [" + std::to_string(index++) + "] ";
+          if (item.is_object()) {
+            for (auto& [k, v] : item.items()) {
+              elems.push_back(text(prefix + k + " : " + v.dump()));
+            }
+          } else {
+            elems.push_back(text(prefix + item.dump()));
+          }
+        }
+      }
+
+      return vbox(elems);
+    }),
+    right_column,
+    array_tools
+  });
+
+  auto layout = Container::Horizontal({menu, right_panel});
+
+  auto on_save = [&] {
+    try {
+      config::save_config(path, config);
+      status_message = "保存成功";
+    } catch (const std::exception& e) {
+      status_message = std::string("保存失败: ") + e.what();
+    }
+  };
+
+  auto on_activate = [&] {
+    try {
+      config::validate_config(config, schema);
+      config::set_active_config(path);
+      status_message = "设为激活配置";
+    } catch (const std::exception& e) {
+      show_warning("校验失败", e.what());
+    }
+  };
+
+  auto on_delete = [&] {
+    if (confirm_dialog("确认删除", "是否删除该配置文件？")) {
+      fs::remove(path);
+      screen.Exit();
+    }
+  };
+
+  auto buttons = Container::Horizontal({
+    Button("保存", on_save),
+    Button("设为激活", on_activate),
+    Button("删除", on_delete),
+    Button("返回", [&] { screen.Exit(); })
+  });
+
+  auto main_renderer = Renderer(Container::Vertical({layout, buttons}), [&] {
+    return vbox({
+      text("配置编辑器") | bold | center,
+      separator(),
+      hbox({
+        vbox({
+          text("设置项") | bold,
+          separator(),
+          menu->Render() | frame | size(HEIGHT, LESS_THAN, 20)
+        }) | flex,
+        separator(),
+        vbox({
+          text("详情") | bold,
+          separator(),
+          right_panel->Render()
+        }) | size(WIDTH, LESS_THAN, 60)
+      }),
+      separator(),
+      buttons->Render() | center,
+      text(status_message) | color(Color::Yellow)
+    }) | border;
+  });
+
+  screen.Loop(main_renderer);
+}
 
 }  // namespace ui
