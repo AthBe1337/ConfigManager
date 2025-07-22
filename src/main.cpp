@@ -16,7 +16,7 @@ int main(int argc, char* argv[]) {
         if (argc > 1) {
             app_name = argv[1];
         } else {
-            app_name = ui::ask_app_name();  // 需在 ui::file_selector.cpp 或 utils 添加交互
+            app_name = ui::ask_app_name();
         }
 
         // 2. 设置配置目录

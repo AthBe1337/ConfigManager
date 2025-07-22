@@ -33,7 +33,7 @@
 
 ## 构建
 
-对于linux
+## linux
 
 ```bash
 git clone https://github.com/AthBe1337/ConfigManager.git
@@ -43,4 +43,14 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 ```
 
-Windows的兼容正在完善。
+## Windows
+
+```bash
+git clone https://github.com/AthBe1337/ConfigManager.git
+cd ConfigManager
+mkdir build && cd build
+cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+ninja -j18
+```
+
+由于需要创建符号链接，所以需要管理员权限。启动时请以管理员身份运行。

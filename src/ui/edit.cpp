@@ -431,7 +431,7 @@ namespace ui {
       if (selected >= 0 && selected < menu_paths.size()) {
         // 布尔类型 - 显示复选框
         if (current_schema_ptr->contains("type") && (*current_schema_ptr)["type"] == "boolean") {
-          editor_component = Checkbox("", &bool_value);
+          editor_component = Checkbox("启用", &bool_value);
         }
         // 枚举类型 - 显示切换按钮
         else if (current_schema_ptr->contains("enum")) {
