@@ -110,7 +110,12 @@ namespace ui {
 
             std::string config_dir = config::get_default_config_dir();
             auto files = utils::filesystem::list_json_files(config_dir);
-            std::string active = fs::path(config::get_active_config_path()).filename().string();
+            std::string active;
+            try {
+                active = fs::path(config::get_active_config_path()).filename().string();
+            } catch (const std::exception& e) {
+                // 忽略
+            }
 
             std::vector<std::string> display_files;
             for (const auto& f : files) {
@@ -120,6 +125,7 @@ namespace ui {
             int selected = 0;
 
             auto on_edit = [&] {
+                if (files.empty()) return;
                 screen.Exit();
                 ui::edit_config(config_dir + "/" + files[selected], app_name, schema);
             };
@@ -128,11 +134,17 @@ namespace ui {
                 if (files.empty()) return;
                 std::string target = config_dir + "/" + files[selected];
                 if (confirm_dialog("确认删除", "是否删除配置文件：" + files[selected] + "？")) {
-                    fs::remove(target);
-                    if (fs::exists(config::get_active_config_path()) &&
-                        fs::equivalent(target, config::get_active_config_path())) {
+                    std::string active_config;
+                    try {
+                        active_config = config::get_active_config_path();
+                    } catch (const std::exception& e) {
+                        // 忽略
+                    }
+                    if (!active_config.empty() && fs::exists(active_config) &&
+                        fs::equivalent(target, active_config)) {
                         fs::remove(config::get_active_config_path());
                     }
+                    fs::remove(target);
                     refresh = true;
                     screen.Exit();
                 }

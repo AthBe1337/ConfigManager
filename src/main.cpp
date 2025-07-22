@@ -33,14 +33,20 @@ int main(int argc, char* argv[]) {
         auto schema = config::load_schema(fs::path(config_path).parent_path().string() + "/schema.json");
 
         // 5. 校验当前激活配置（如果存在）
-        if (fs::exists(config::get_active_config_path())) {
+        std::string active_path;
+        try {
+            active_path = config::get_active_config_path();
+        } catch (const std::exception& e) {
+            // 忽略
+        }
+        if (!active_path.empty() && fs::exists(active_path)) {
             auto cfg = config::load_config(config::get_active_config_path());
             try {
                 config::validate_config(cfg, schema);
             } catch (const std::exception& e) {
                 fs::remove(config::get_active_config_path());
                 ui::show_warning_message("激活配置校验失败",
-                    "已激活的配置文件无法通过 schema 校验，已取消激活。");
+                    "已激活的配置文件无法通过 schema 校验，已取消激活。" + std::string(e.what()));
             }
         }
 

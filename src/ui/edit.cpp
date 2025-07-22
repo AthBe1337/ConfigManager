@@ -487,17 +487,37 @@ namespace ui {
     };
 
     auto on_activate = [&] {
+      // 先保存配置
+      try {
+        config::save_config(path, config);
+        status_message = "保存成功";
+      } catch (const std::exception& e) {
+        status_message = std::string("保存失败: ") + e.what();
+        show_warning("保存失败, 未激活: ", e.what());
+        return;
+      }
+
+      // 保存成功后激活配置
       try {
         config::validate_config(config, schema);
         config::set_active_config(path);
         status_message = "已设为激活配置";
       } catch (const std::exception& e) {
-        show_warning("校验失败", e.what());
+        show_warning("校验失败: ", e.what());
       }
     };
 
     auto on_delete = [&] {
       if (confirm_dialog("确认删除", "是否删除该配置文件？")) {
+        std::string active_config;
+        try {
+          active_config = config::get_active_config_path();
+        } catch (const std::exception& e) {
+          // 忽略
+        }
+        if (!active_config.empty() && fs::exists(active_config) && fs::equivalent(path, active_config)) {
+          fs::remove(config::get_active_config_path());
+        }
         fs::remove(path);
         screen.Exit();
         run_main_ui(app_name, schema);
