@@ -18,6 +18,10 @@ namespace config {
                 }
             }
             return result;
+        } else if (schema.contains("enum")){
+            if (schema["enum"].size() > 0)
+                return schema["enum"][0];
+            return nullptr;
         } else if (type == "array") {
             json arr = json::array();
             int count = 0;
