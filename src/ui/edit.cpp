@@ -112,8 +112,6 @@ namespace ui {
     return result;
   }
 
-  // TODO: 添加数组项插入和删除功能
-
   void edit_config(const std::string& path, const std::string& app_name, const config::json& schema) {
     json config = config::load_config(path);
 
@@ -140,33 +138,79 @@ namespace ui {
       menu_values = std::move(entry.values);
     };
 
+    // 存储当前选中的schema信息
+    const json* current_schema_ptr = &schema;
+    json::json_pointer current_parent_ptr;
+    bool current_is_array = false;
+    bool current_is_array_element = false;
+    int current_min_items = 0;
+
     auto select_path_by_index = [&] {
       if (selected >= 0 && selected < menu_paths.size()) {
         json::json_pointer ptr = menu_paths[selected];
         const json& val = config[ptr];
 
-        const json* schema_ptr = &schema;
+        // 重置状态
+        current_is_array = false;
+        current_is_array_element = false;
+        current_min_items = 0;
+
+        // 获取当前指针的schema
+        current_schema_ptr = &schema;
         auto tokens = split_path(ptr.to_string());
         for (const std::string& key : tokens) {
-          if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "array") {
-            if (schema_ptr->contains("items"))
-              schema_ptr = &(*schema_ptr)["items"];
-          } else if (schema_ptr->contains("properties") && (*schema_ptr)["properties"].contains(key)) {
-            schema_ptr = &(*schema_ptr)["properties"][key];
+          if (current_schema_ptr->contains("type") && (*current_schema_ptr)["type"] == "array") {
+            if (current_schema_ptr->contains("items"))
+              current_schema_ptr = &(*current_schema_ptr)["items"];
+          } else if (current_schema_ptr->contains("properties") && (*current_schema_ptr)["properties"].contains(key)) {
+            current_schema_ptr = &(*current_schema_ptr)["properties"][key];
           }
         }
 
-        if (schema_ptr->contains("description"))
-          description = (*schema_ptr)["description"].get<std::string>();
+        // 检查是否是数组元素
+        if (!ptr.empty()) {
+          current_parent_ptr = ptr.parent_pointer();
+          if (config.contains(current_parent_ptr) && config[current_parent_ptr].is_array()) {
+            current_is_array_element = true;
+
+            // 获取父数组的schema
+            const json* parent_schema_ptr = &schema;
+            auto parent_tokens = split_path(current_parent_ptr.to_string());
+            for (const std::string& key : parent_tokens) {
+              if (parent_schema_ptr->contains("type") && (*parent_schema_ptr)["type"] == "array") {
+                if (parent_schema_ptr->contains("items"))
+                  parent_schema_ptr = &(*parent_schema_ptr)["items"];
+              } else if (parent_schema_ptr->contains("properties") && (*parent_schema_ptr)["properties"].contains(key)) {
+                parent_schema_ptr = &(*parent_schema_ptr)["properties"][key];
+              }
+            }
+
+            // 获取minItems约束
+            if (parent_schema_ptr->contains("minItems")) {
+              current_min_items = (*parent_schema_ptr)["minItems"].get<int>();
+            }
+          }
+        }
+
+        // 检查当前项是否是数组
+        if (current_schema_ptr->contains("type") && (*current_schema_ptr)["type"] == "array") {
+          current_is_array = true;
+          if (current_schema_ptr->contains("minItems")) {
+            current_min_items = (*current_schema_ptr)["minItems"].get<int>();
+          }
+        }
+
+        if (current_schema_ptr->contains("description"))
+          description = (*current_schema_ptr)["description"].get<std::string>();
         else
           description = "无描述";
 
-        if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "boolean") {
+        if (current_schema_ptr->contains("type") && (*current_schema_ptr)["type"] == "boolean") {
           bool_value = val.get<bool>();
           edit_buffer = "";
         }
-        else if (schema_ptr->contains("enum")) {
-          const auto& enum_vals = (*schema_ptr)["enum"];
+        else if (current_schema_ptr->contains("enum")) {
+          const auto& enum_vals = (*current_schema_ptr)["enum"];
           std::string current_val = val.get<std::string>();
 
           // 更新枚举选项
@@ -184,8 +228,8 @@ namespace ui {
           }
           edit_buffer = "";
         }
-        else if (schema_ptr->contains("type")) {
-          std::string type = (*schema_ptr)["type"];
+        else if (current_schema_ptr->contains("type")) {
+          std::string type = (*current_schema_ptr)["type"];
           if (type == "string") {
             edit_buffer = val.get<std::string>();
           } else {
@@ -218,49 +262,118 @@ namespace ui {
 
     // 更新按钮
     auto update_button = Button("更新", [&] {
-    if (selected >= 0 && selected < menu_paths.size()) {
-      try {
-        json::json_pointer ptr = menu_paths[selected];
-        const json* schema_ptr = &schema;
-        auto tokens = split_path(ptr.to_string());
-        for (const std::string& key : tokens) {
-          if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "array") {
-            if (schema_ptr->contains("items"))
-              schema_ptr = &(*schema_ptr)["items"];
-          } else if (schema_ptr->contains("properties") && (*schema_ptr)["properties"].contains(key)) {
-            schema_ptr = &(*schema_ptr)["properties"][key];
-          }
-        }
+      if (selected >= 0 && selected < menu_paths.size()) {
+        try {
+          json::json_pointer ptr = menu_paths[selected];
+          json parsed;
 
-        json parsed;
-        if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "boolean") {
-          parsed = bool_value;
-        }
-        else if (schema_ptr->contains("enum")) {
-          parsed = enum_options[enum_selected];
-        }
-        else if (schema_ptr->contains("type")) {
-          std::string type = (*schema_ptr)["type"];
-          if (type == "string") {
-            parsed = edit_buffer;
+          if (current_schema_ptr->contains("type") && (*current_schema_ptr)["type"] == "boolean") {
+            parsed = bool_value;
+          }
+          else if (current_schema_ptr->contains("enum")) {
+            parsed = enum_options[enum_selected];
+          }
+          else if (current_schema_ptr->contains("type")) {
+            std::string type = (*current_schema_ptr)["type"];
+            if (type == "string") {
+              parsed = edit_buffer;
+            } else {
+              parsed = json::parse(edit_buffer);
+            }
           } else {
             parsed = json::parse(edit_buffer);
           }
-        } else {
-          parsed = json::parse(edit_buffer);
+
+          config[ptr] = parsed;
+          status_message = "更新成功";
+
+          // 更新菜单树和菜单项
+          update_menu_tree();
+          update_menu_items();
+        } catch (...) {
+          status_message = "更新失败：无效 JSON 或类型不匹配";
         }
-
-        config[ptr] = parsed;
-        status_message = "更新成功";
-
-        // 更新菜单树和菜单项
-        update_menu_tree();
-        update_menu_items();
-      } catch (...) {
-        status_message = "更新失败：无效 JSON 或类型不匹配";
       }
-    }
-  });
+    });
+
+    // 添加数组项按钮
+    auto add_button = Button("添加新项", [&] {
+      if (selected >= 0 && selected < menu_paths.size() && current_is_array) {
+        try {
+          json::json_pointer array_ptr = menu_paths[selected];
+
+          // 创建新项的默认值
+          if (current_schema_ptr->contains("items")) {
+            json new_item = config::generate_default_config((*current_schema_ptr)["items"]);
+            config[array_ptr].push_back(new_item);
+
+            status_message = "已添加新项";
+
+            // 更新菜单树和菜单项
+            update_menu_tree();
+            update_menu_items();
+
+            // 选中新添加的项
+            int new_index = config[array_ptr].size() - 1;
+            json::json_pointer new_ptr = array_ptr / std::to_string(new_index);
+            for (int i = 0; i < menu_paths.size(); i++) {
+              if (menu_paths[i] == new_ptr) {
+                selected = i;
+                select_path_by_index();
+                break;
+              }
+            }
+          }
+        } catch (...) {
+          status_message = "添加失败";
+        }
+      }
+    });
+
+    // 删除数组项按钮
+    auto delete_button = Button("删除此项", [&] {
+      if (selected >= 0 && selected < menu_paths.size() && current_is_array_element) {
+        try {
+          json::json_pointer element_ptr = menu_paths[selected];
+          json::json_pointer parent_ptr = element_ptr.parent_pointer();
+
+          // 检查minItems约束
+          int current_size = config[parent_ptr].size();
+          if (current_min_items > 0 && current_size <= current_min_items) {
+            status_message = "无法删除：数组元素数量不能小于minItems(" + std::to_string(current_min_items) + ")";
+            return;
+          }
+
+          // 确认对话框
+          if (confirm_dialog("确认删除", "是否删除该项？")) {
+            // 获取索引
+            std::string index_str = element_ptr.back();
+            int index = std::stoi(index_str);
+
+            // 删除元素
+            json& arr = config[parent_ptr];
+            arr.erase(arr.begin() + index);
+
+            status_message = "已删除项";
+
+            // 更新菜单树和菜单项
+            update_menu_tree();
+            update_menu_items();
+
+            // 选中父数组
+            for (int i = 0; i < menu_paths.size(); i++) {
+              if (menu_paths[i] == parent_ptr) {
+                selected = i;
+                select_path_by_index();
+                break;
+              }
+            }
+          }
+        } catch (...) {
+          status_message = "删除失败";
+        }
+      }
+    });
 
     MenuOption option;
     option.on_change = [&] {
@@ -282,23 +395,14 @@ namespace ui {
       std::string current_value;
       if (selected >= 0 && selected < menu_paths.size()) {
         json::json_pointer ptr = menu_paths[selected];
-        const json* schema_ptr = &schema;
-        auto tokens = split_path(ptr.to_string());
-        for (const std::string& key : tokens) {
-          if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "array") {
-            if (schema_ptr->contains("items"))
-              schema_ptr = &(*schema_ptr)["items"];
-          } else if (schema_ptr->contains("properties") && (*schema_ptr)["properties"].contains(key)) {
-            schema_ptr = &(*schema_ptr)["properties"][key];
-          }
-        }
+        const json& val = config[ptr];
 
-        if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "boolean") {
+        if (current_schema_ptr->contains("type") && (*current_schema_ptr)["type"] == "boolean") {
           current_value = bool_value ? "true" : "false";
-        } else if (schema_ptr->contains("enum")) {
+        } else if (current_schema_ptr->contains("enum")) {
           current_value = enum_options.empty() ? "" : enum_options[enum_selected];
         } else {
-          current_value = config[ptr].dump();
+          current_value = val.dump();
         }
       }
       return hbox({text("当前值: "), text(current_value)});
@@ -311,10 +415,12 @@ namespace ui {
 
     // 右侧面板容器
     auto right_panel = Container::Vertical({});
+    auto array_buttons = Container::Horizontal({});
 
     // 更新右侧面板
     auto update_right_panel = [&] {
       right_panel->DetachAllChildren();
+      array_buttons->DetachAllChildren();
 
       // 添加固定组件
       right_panel->Add(description_display);
@@ -323,24 +429,12 @@ namespace ui {
 
       // 添加动态编辑器
       if (selected >= 0 && selected < menu_paths.size()) {
-        json::json_pointer ptr = menu_paths[selected];
-        const json* schema_ptr = &schema;
-        auto tokens = split_path(ptr.to_string());
-        for (const std::string& key : tokens) {
-          if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "array") {
-            if (schema_ptr->contains("items"))
-              schema_ptr = &(*schema_ptr)["items"];
-          } else if (schema_ptr->contains("properties") && (*schema_ptr)["properties"].contains(key)) {
-            schema_ptr = &(*schema_ptr)["properties"][key];
-          }
-        }
-
         // 布尔类型 - 显示复选框
-        if (schema_ptr->contains("type") && (*schema_ptr)["type"] == "boolean") {
+        if (current_schema_ptr->contains("type") && (*current_schema_ptr)["type"] == "boolean") {
           editor_component = Checkbox("", &bool_value);
         }
         // 枚举类型 - 显示切换按钮
-        else if (schema_ptr->contains("enum")) {
+        else if (current_schema_ptr->contains("enum")) {
           // 使用持久的 enum_options 向量
           editor_component = Radiobox(&enum_options, &enum_selected);
         }
@@ -355,6 +449,18 @@ namespace ui {
       // 添加编辑器和更新按钮
       right_panel->Add(editor_component);
       right_panel->Add(update_button);
+
+      // 添加数组操作按钮
+      if (current_is_array) {
+        array_buttons->Add(add_button);
+      }
+      if (current_is_array_element) {
+        array_buttons->Add(delete_button);
+      }
+
+      if (array_buttons->ChildCount() > 0) {
+        right_panel->Add(array_buttons);
+      }
     };
 
     // 初始化右侧面板
@@ -402,7 +508,7 @@ namespace ui {
       Button("保存配置", on_save),
       Button("激活配置", on_activate),
       Button("删除配置", on_delete),
-      Button("返回主菜单", [&] {
+      Button("返回", [&] {
         screen.Exit();
         run_main_ui(app_name, schema);
       })
@@ -415,36 +521,36 @@ namespace ui {
     });
 
     auto main_renderer = Renderer(main_container, [&] {
-    // 当选中项变化时更新右侧面板
-    static int last_selected = -1;
-    if (selected != last_selected) {
-      update_right_panel();
-      last_selected = selected;
-    }
+      // 当选中项变化时更新右侧面板
+      static int last_selected = -1;
+      if (selected != last_selected) {
+        update_right_panel();
+        last_selected = selected;
+      }
 
-    return vbox({
-      text("配置编辑器") | bold | center,
-      separator(),
-      hbox({
-        // 左侧面板
-        vbox({
-          text("设置项") | bold,
-          separator(),
-          menu->Render() | vscroll_indicator | frame | size(HEIGHT, LESS_THAN, 20)
-        }) | border | size(WIDTH, EQUAL, left_panel_width + 4),
+      return vbox({
+        text("配置编辑器") | bold | center,
+        separator(),
+        hbox({
+          // 左侧面板
+          vbox({
+            text("设置项") | bold,
+            separator(),
+            menu->Render() | vscroll_indicator | frame | size(HEIGHT, LESS_THAN, 20)
+          }) | border | size(WIDTH, EQUAL, left_panel_width + 4),
 
-        // 右侧面板
-        vbox({
-          text("详情") | bold,
-          separator(),
-          right_panel->Render()
-        }) | border | size(WIDTH, EQUAL, right_panel_width + 4)
-      }) | flex,
-      separator(),
-      buttons->Render() | center,
-      text(status_message) | color(Color::Yellow)
-    }) | border;
-  });
+          // 右侧面板
+          vbox({
+            text("详情") | bold,
+            separator(),
+            right_panel->Render()
+          }) | border | size(WIDTH, EQUAL, right_panel_width + 4)
+        }) | flex,
+        separator(),
+        buttons->Render() | center,
+        text(status_message) | color(Color::Yellow)
+      }) | border;
+    });
 
     screen.Loop(main_renderer);
   }

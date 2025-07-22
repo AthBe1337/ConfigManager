@@ -31,7 +31,7 @@ namespace config {
             if (schema.contains("default"))
                 return schema["default"];
             return "";
-        } else if (type == "integer") {
+        } else if (type == "integer" || type == "number") {
             if (schema.contains("default"))
                 return schema["default"];
             if (schema.contains("minimum"))
