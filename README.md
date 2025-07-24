@@ -36,7 +36,7 @@
 ## linux
 
 ```bash
-git clone https://github.com/AthBe1337/ConfigManager.git
+git clone --recurse-submodules https://github.com/AthBe1337/ConfigManager.git
 cd ConfigManager
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
