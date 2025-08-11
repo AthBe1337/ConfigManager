@@ -46,7 +46,7 @@ make -j$(nproc)
 ## Windows
 
 ```bash
-git clone https://github.com/AthBe1337/ConfigManager.git
+git clone --recurse-submodules https://github.com/AthBe1337/ConfigManager.git
 cd ConfigManager
 mkdir build && cd build
 cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release
