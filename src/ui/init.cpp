@@ -92,28 +92,4 @@ namespace ui {
         return result;
     }
 
-    void show_warning_message(const std::string& title, const std::string& message) {
-        bool acknowledged = false;
-        auto screen = ScreenInteractive::FitComponent();
-
-        auto button = Button("确定", [&] {
-            acknowledged = true;
-            screen.Exit();
-        });
-
-        auto layout = Container::Vertical({button});
-
-        auto renderer = Renderer(layout, [&] {
-            return vbox({
-                text(title) | bold,
-                separator(),
-                text(message),
-                separator(),
-                button->Render(),
-            }) | border | center;
-        });
-
-        screen.Loop(renderer);
-    }
-
 }  // namespace ui

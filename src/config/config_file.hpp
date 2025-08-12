@@ -34,4 +34,7 @@ namespace config {
     // 从指定位置复制 schema.json
     void copy_schema_to_default_dir(const std::string& from_path);
 
+    // 删除符号链接
+    void remove_active_config_link();
+
 } // namespace config

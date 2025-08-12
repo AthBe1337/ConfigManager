@@ -148,5 +148,15 @@ namespace config {
 
     }
 
+    void remove_active_config_link() {
+        try {
+            if (fs::exists(active_link_path()) && utils::filesystem::is_symlink(active_link_path())) {
+                fs::remove(active_link_path());
+            }
+        } catch (const std::exception& e) {
+            throw std::runtime_error("Failed to remove active symlink: " + std::string(e.what()));
+        }
+    }
+
 
 } // namespace config

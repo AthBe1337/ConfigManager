@@ -42,9 +42,9 @@ int main(int argc, char* argv[]) {
             try {
                 config::validate_config(cfg, schema);
             } catch (const std::exception& e) {
-                fs::remove(config::get_active_config_path());
-                ui::show_warning_message("激活配置校验失败",
-                    "已激活的配置文件无法通过 schema 校验，已取消激活。" + std::string(e.what()));
+                config::remove_active_config_link();
+                ui::show_warning("激活配置校验失败",
+                    "已激活的配置文件无法通过 schema 校验，已取消激活。\n" + std::string(e.what()));
             }
         }
 

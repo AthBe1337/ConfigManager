@@ -391,12 +391,15 @@ namespace ui {
     // 右侧面板组件
     Component description_display = Renderer([&] {
       int max_width = std::max(20, right_panel_width);
-
       auto lines = ui::make_wrapped_text(description, max_width);
 
       return vbox({
-          text("描述:") | bold,
-          vbox(lines) | size(HEIGHT, EQUAL, 7) | size(WIDTH, LESS_THAN, max_width)
+        text("描述:") | bold,
+        vbox(lines)
+          | size(WIDTH, EQUAL, max_width)   // 确保宽度和 wrap 时一致
+          | size(HEIGHT, EQUAL, 7)
+          | frame
+          | vscroll_indicator
       });
     });
 
@@ -522,7 +525,7 @@ namespace ui {
           // 忽略
         }
         if (!active_config.empty() && fs::exists(active_config) && fs::equivalent(path, active_config)) {
-          fs::remove(config::get_active_config_path());
+          config::remove_active_config_link();
         }
         fs::remove(path);
         screen.Exit();
@@ -550,8 +553,8 @@ namespace ui {
       // 当选中项变化时更新右侧面板
       static int last_selected = -1;
       if (selected != last_selected) {
-        update_right_panel();
-        last_selected = selected;
+          update_right_panel();
+          last_selected = selected;
       }
 
       return vbox({
@@ -562,16 +565,22 @@ namespace ui {
           vbox({
             text("设置项") | bold,
             separator(),
-            menu->Render() | vscroll_indicator | frame | size(HEIGHT, LESS_THAN, 20)
-          }) | border | size(WIDTH, EQUAL, left_panel_width + 4),
+            menu->Render()
+              | vscroll_indicator
+              | frame
+              | size(HEIGHT, LESS_THAN, 20)
+          }) | border
+            | size(WIDTH, EQUAL, left_panel_width + 4),
 
           // 右侧面板
           vbox({
             text("详情") | bold,
             separator(),
             right_panel->Render()
-          }) | border | size(WIDTH, EQUAL, right_panel_width + 4)
-        }) | flex,
+              | size(WIDTH, EQUAL, right_panel_width) // 限制实际内容宽度
+          }) | border
+            | size(WIDTH, EQUAL, right_panel_width + 4)
+        }),
         separator(),
         buttons->Render() | center,
         text(status_message) | color(Color::Yellow)

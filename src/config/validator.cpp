@@ -7,7 +7,7 @@
 
 namespace config {
 
-    // schema loader：支持本地路径加载，后续可扩展为网络加载
+    // schema loader：支持本地路径加载
     static void loader(const nlohmann::json_uri &uri, nlohmann::json &schema) {
         std::string filename = "./" + uri.path();
         std::ifstream lf(filename);

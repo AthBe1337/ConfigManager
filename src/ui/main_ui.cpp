@@ -54,7 +54,7 @@ namespace ui {
     }
 
     // 显示警告对话框
-    void show_warning(const std::string& title, const std::string& message) {
+    void show_warning(const std::string &title, const std::string &message) {
         auto screen = ScreenInteractive::FitComponent();
         auto confirm_button = Button("确定", [&] { screen.Exit(); });
 
@@ -66,13 +66,13 @@ namespace ui {
 
         auto layout = Container::Vertical({confirm_button});
         auto renderer = Renderer(layout, [&] {
-            return vbox({
-                text(title) | bold | color(Color::Red),
-                separator(),
-                vbox(message_elements),
-                separator(),
-                confirm_button->Render() | center
-            }) | border | center;
+          return vbox({
+            text(title) | bold | color(Color::Red),
+            separator(),
+            vbox(message_elements),
+            separator(),
+            confirm_button->Render() | center
+          }) | border | center;
         });
 
         screen.Loop(renderer);
@@ -157,7 +157,7 @@ namespace ui {
                     }
                     if (!active_config.empty() && fs::exists(active_config) &&
                         fs::equivalent(target, active_config)) {
-                        fs::remove(config::get_active_config_path());
+                        config::remove_active_config_link();
                     }
                     fs::remove(target);
                     refresh = true;
