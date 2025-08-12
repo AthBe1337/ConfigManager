@@ -1,4 +1,5 @@
 #include "edit.hpp"
+#include "ui_utils.hpp"
 #include "../utils/fs.hpp"
 #include "../config.h"
 #include "main_ui.hpp"
@@ -389,29 +390,13 @@ namespace ui {
 
     // 右侧面板组件
     Component description_display = Renderer([&] {
-      int max_width = std::max(20, right_panel_width - 4); // 给边距
+      int max_width = std::max(20, right_panel_width);
 
-      std::vector<Element> lines;
-      std::istringstream iss(description);
-      std::string paragraph;
-      bool first_paragraph = true;
-
-      while (std::getline(iss, paragraph)) {
-          if (!first_paragraph) lines.push_back(text(""));
-          first_paragraph = false;
-
-          auto wrapped = ui::wrap_paragraph(paragraph, max_width);
-          for (auto &ln : wrapped) {
-              lines.push_back(text(ln));
-          }
-      }
-      if (description.empty()) {
-          lines.push_back(text(""));
-      }
+      auto lines = ui::make_wrapped_text(description, max_width);
 
       return vbox({
           text("描述:") | bold,
-          vbox(lines) | size(HEIGHT, EQUAL, 7)
+          vbox(lines) | size(HEIGHT, EQUAL, 7) | size(WIDTH, LESS_THAN, max_width)
       });
     });
 

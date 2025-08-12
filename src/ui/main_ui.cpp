@@ -1,7 +1,7 @@
 #include "../utils/fs.hpp"
 #include "main_ui.hpp"
 #include "edit.hpp"
-#include "ui_util.hpp"
+#include "ui_utils.hpp"
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
