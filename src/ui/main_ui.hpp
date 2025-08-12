@@ -12,4 +12,8 @@ namespace ui {
     std::string ask_new_filename(const std::vector<std::string>& existing);
 
     void run_main_ui(const std::string& app_name, const config::json& schema);
+
+    int get_terminal_width();
+
+    std::vector<std::string> wrap_paragraph(const std::string& paragraph, int max_width);
 }

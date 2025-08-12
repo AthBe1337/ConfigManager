@@ -1,20 +1,29 @@
 #include "../utils/fs.hpp"
 #include "main_ui.hpp"
 #include "edit.hpp"
+#include "ui_util.hpp"
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/dom/elements.hpp>
 #include <filesystem>
 #include <vector>
 #include <string>
 #include <algorithm>
 #include <regex>
 #include <ctime>
+#include <cwchar>
+
+#ifdef _WIN32
+  #include <windows.h>
+#else
+  #include <sys/ioctl.h>
+  #include <unistd.h>
+#endif
 
 using namespace ftxui;
 namespace fs = std::filesystem;
 
 namespace ui {
-
     // 显示确认对话框
     bool confirm_dialog(const std::string& title, const std::string& message) {
         bool confirmed = false;
@@ -49,12 +58,18 @@ namespace ui {
         auto screen = ScreenInteractive::FitComponent();
         auto confirm_button = Button("确定", [&] { screen.Exit(); });
 
+        int term_width = get_terminal_width();
+        int max_width = std::max(20, term_width - 10);
+        if (max_width > 120) max_width = 120;
+
+        auto message_elements = make_wrapped_text(message, max_width);
+
         auto layout = Container::Vertical({confirm_button});
         auto renderer = Renderer(layout, [&] {
             return vbox({
                 text(title) | bold | color(Color::Red),
                 separator(),
-                text(message),
+                vbox(message_elements),
                 separator(),
                 confirm_button->Render() | center
             }) | border | center;

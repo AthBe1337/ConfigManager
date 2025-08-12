@@ -383,13 +383,38 @@ namespace ui {
     // 使用标准Menu组件
     auto menu = Menu(&menu_items, &selected, option);
 
+    // 固定左右面板大小
+    int left_panel_width = 50; // 左侧面板宽度
+    int right_panel_width = 60; // 右侧面板宽度
+
     // 右侧面板组件
     Component description_display = Renderer([&] {
+      int max_width = std::max(20, right_panel_width - 4); // 给边距
+
+      std::vector<Element> lines;
+      std::istringstream iss(description);
+      std::string paragraph;
+      bool first_paragraph = true;
+
+      while (std::getline(iss, paragraph)) {
+          if (!first_paragraph) lines.push_back(text(""));
+          first_paragraph = false;
+
+          auto wrapped = ui::wrap_paragraph(paragraph, max_width);
+          for (auto &ln : wrapped) {
+              lines.push_back(text(ln));
+          }
+      }
+      if (description.empty()) {
+          lines.push_back(text(""));
+      }
+
       return vbox({
-        text("描述:") | bold,
-        paragraph(description) | size(HEIGHT, EQUAL, 7)
+          text("描述:") | bold,
+          vbox(lines) | size(HEIGHT, EQUAL, 7)
       });
     });
+
 
     Component current_value_display = Renderer([&] {
       std::string current_value;
@@ -465,10 +490,6 @@ namespace ui {
 
     // 初始化右侧面板
     update_right_panel();
-
-    // 固定左右面板大小
-    int left_panel_width = 50; // 左侧面板宽度
-    int right_panel_width = 60; // 右侧面板宽度
 
     auto layout = Container::Horizontal({
       // 左侧面板（菜单）
