@@ -440,29 +440,30 @@ namespace ui {
       right_panel->Add(current_value_display);
       right_panel->Add(separator_renderer);
 
-      // 添加动态编辑器
-      if (selected >= 0 && selected < menu_paths.size()) {
-        // 布尔类型 - 显示复选框
-        if (current_schema_ptr->contains("type") && (*current_schema_ptr)["type"] == "boolean") {
-          editor_component = Checkbox("启用", &bool_value);
-        }
-        // 枚举类型 - 显示切换按钮
-        else if (current_schema_ptr->contains("enum")) {
-          // 使用持久的 enum_options 向量
-          editor_component = Radiobox(&enum_options, &enum_selected);
-        }
-        // 其他类型 - 显示文本输入框
-        else {
+      // 判断当前项是否为数组或对象，只有当前项既不是数组也不是对象时才显示编辑相关组件
+      if (!current_is_array && (!current_schema_ptr->contains("type") || (*current_schema_ptr)["type"] != "object")) {
+        if (selected >= 0 && selected < menu_paths.size()) {
+          // 布尔类型 - 显示复选框
+          if (current_schema_ptr->contains("type") && (*current_schema_ptr)["type"] == "boolean") {
+            editor_component = Checkbox("启用", &bool_value);
+          }
+          // 枚举类型 - 显示切换按钮
+          else if (current_schema_ptr->contains("enum")) {
+            // 使用持久的 enum_options 向量
+            editor_component = Radiobox(&enum_options, &enum_selected);
+          }
+          // 其他类型 - 显示文本输入框
+          else {
+            editor_component = Input(&edit_buffer, "编辑值");
+          }
+        } else {
           editor_component = Input(&edit_buffer, "编辑值");
         }
-      } else {
-        editor_component = Input(&edit_buffer, "编辑值");
+
+        // 添加编辑器和更新按钮
+        right_panel->Add(editor_component);
+        right_panel->Add(update_button);
       }
-
-      // 添加编辑器和更新按钮
-      right_panel->Add(editor_component);
-      right_panel->Add(update_button);
-
       // 添加数组操作按钮
       if (current_is_array) {
         array_buttons->Add(add_button);
