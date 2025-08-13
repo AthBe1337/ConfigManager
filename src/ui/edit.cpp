@@ -437,7 +437,9 @@ namespace ui {
 
       // 添加固定组件
       right_panel->Add(description_display);
-      right_panel->Add(current_value_display);
+      if (!current_is_array && (!current_schema_ptr->contains("type") || (*current_schema_ptr)["type"] != "object")) {
+        right_panel->Add(current_value_display);
+      }
       right_panel->Add(separator_renderer);
 
       // 判断当前项是否为数组或对象，只有当前项既不是数组也不是对象时才显示编辑相关组件
